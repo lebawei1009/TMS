@@ -1,95 +1,86 @@
 import os
 import numpy as np
 import torch
-import matplotlib.pyplot as plt
-import seaborn as sns
-from NPI import ANN_RNN, ANN_MLP, ANN_CNN, ANN_VAR, train_NN, model_FC, model_EC, multi2one, device
+from NPI import ANN_RNN, ANN_MLP, ANN_CNN, ANN_VAR, train_NN, model_FC, multi2one
 
 # ---------------------- Configuration ----------------------
 MODEL_TYPE = 'RNN'  # Options: 'RNN', 'MLP', 'CNN', 'VAR'
-steps = 4
-base_path = "D:/op/ANN/TMS_fMRI_2.0.0_AAL424/TMS_fMRI_2.0.0_TIS/resting"
+base_root = "D:/op/ANN/TMS_fMRI_2.0.0_AAL424"
+subfolders = ["TMS_fMRI_2.0.0_NTHC", "TMS_fMRI_2.0.0_NTS", "TMS_fMRI_2.0.0_TEHC", "TMS_fMRI_2.0.0_TIS"]
+steps_range = list(range(3, 11))  # steps from 3 to 10
 
-for file in os.listdir(base_path):
-    if not file.endswith(".npy"):
-        continue
+all_results = {}
 
-    file_path = os.path.join(base_path, file)
-    data = np.load(file_path, allow_pickle=True)
-    if data.ndim != 2:
-        print(f"[Skipped] Invalid data shape: {file} -> shape={data.shape}")
-        continue
+for steps in steps_range:
+    all_results[steps] = {}
+    print(f"\n>>> Processing steps = {steps}")
 
-    node_num = data.shape[1]
-    input_X, target_Y = multi2one(data, steps)
+    for subfolder in subfolders:
+        base_path = os.path.join(base_root, subfolder, "resting")
+        if not os.path.exists(base_path):
+            continue
 
-    # ---------------------- Model Construction ----------------------
-    if MODEL_TYPE == 'RNN':
-        model = ANN_RNN(
-            input_dim=node_num,
-            hidden_dim=int(2.5 * node_num),
-            latent_dim=int(2.5 * node_num),
-            output_dim=node_num,
-            data_length=steps
-        )
-    elif MODEL_TYPE == 'MLP':
-        model = ANN_MLP(
-            input_dim=steps * node_num,
-            hidden_dim=2 * node_num,
-            latent_dim=int(0.8 * node_num),
-            output_dim=node_num
-        )
-    elif MODEL_TYPE == 'CNN':
-        model = ANN_CNN(
-            in_channels=node_num,
-            hidden_channels=node_num,
-            out_channels=int(0.8 * node_num),
-            data_length=steps
-        )
-    elif MODEL_TYPE == 'VAR':
-        model = ANN_VAR(
-            input_dim=steps * node_num,
-            output_dim=node_num
-        )
-    else:
-        raise ValueError("Unsupported model type")
+        for file in os.listdir(base_path):
+            if not file.endswith(".npy"):
+                continue
 
-    # ---------------------- Model Training ----------------------
-    trained_model, train_loss, test_loss = train_NN(model, input_X, target_Y)
+            file_path = os.path.join(base_path, file)
+            data = np.load(file_path, allow_pickle=True)
+            if data.ndim != 2:
+                continue
 
-    # ---------------------- Visualization Output Path ----------------------
-    subject_id = os.path.splitext(file)[0]
-    subject_dir = os.path.join(base_path, subject_id)
-    os.makedirs(subject_dir, exist_ok=True)
+            node_num = data.shape[1]
+            input_X, target_Y = multi2one(data, steps)
 
-    # ---------------------- Loss Curve ----------------------
-    plt.figure(figsize=(10, 4))
-    plt.plot(train_loss, label="train loss")
-    plt.plot(test_loss, label="test loss")
-    plt.xlabel("Epoch")
-    plt.ylabel("MSE")
-    plt.title(f"{MODEL_TYPE} model training curve - {subject_id}")
-    plt.legend()
-    plt.tight_layout()
-    plt.savefig(os.path.join(subject_dir, f"{subject_id}_loss.png"))
-    plt.close()
+            # ---------------------- Model Init ----------------------
+            if MODEL_TYPE == 'RNN':
+                model = ANN_RNN(
+                    input_dim=node_num,
+                    hidden_dim=int(2.5 * node_num),
+                    latent_dim=int(2.5 * node_num),
+                    output_dim=node_num,
+                    data_length=steps
+                )
+            elif MODEL_TYPE == 'MLP':
+                model = ANN_MLP(
+                    input_dim=steps * node_num,
+                    hidden_dim=2 * node_num,
+                    latent_dim=int(0.8 * node_num),
+                    output_dim=node_num
+                )
+            elif MODEL_TYPE == 'CNN':
+                model = ANN_CNN(
+                    in_channels=node_num,
+                    hidden_channels=node_num,
+                    out_channels=int(0.8 * node_num),
+                    data_length=steps
+                )
+            elif MODEL_TYPE == 'VAR':
+                model = ANN_VAR(
+                    input_dim=steps * node_num,
+                    output_dim=node_num
+                )
+            else:
+                raise ValueError("Unsupported model type")
 
-    # ---------------------- FC Plot ----------------------
-    fc_matrix = model_FC(trained_model, node_num, steps)
-    plt.figure(figsize=(8, 6))
-    sns.heatmap(fc_matrix, cmap="coolwarm", vmin=-1, vmax=1)
-    plt.title(f"Functional Connectivity (FC) - {subject_id}")
-    plt.tight_layout()
-    plt.savefig(os.path.join(subject_dir, f"{subject_id}_fc.png"))
-    plt.close()
+            # ---------------------- Train + Predict FC ----------------------
+            trained_model, train_loss, test_loss = train_NN(model, input_X, target_Y)
+            model_fc = model_FC(trained_model, node_num, steps)
+            true_fc = np.corrcoef(data.T)
 
-    # ---------------------- EC Plot ----------------------
-    ec_matrix = model_EC(trained_model, input_X, target_Y, pert_strength=0.15)
-    plt.figure(figsize=(8, 6))
-    sns.heatmap(ec_matrix, cmap="bwr", vmin=-0.05, vmax=0.05)
-    plt.title(f"Effective Connectivity (EC) - {subject_id}")
-    plt.tight_layout()
-    plt.savefig(os.path.join(subject_dir, f"{subject_id}_ec.png"))
-    plt.close()
+            # ---------------------- Flatten + Correlation ----------------------
+            mask = ~np.eye(node_num, dtype=bool)
+            fc_corr = np.corrcoef(true_fc[mask], model_fc[mask])[0, 1]
 
-    print(f"[✓] Visualization completed: {subject_id}")
+            subject_id = os.path.splitext(file)[0]
+            all_results[steps][subject_id] = {
+                "fc_correlation": fc_corr,
+                "train_loss": train_loss,
+                "test_loss": test_loss,
+                "model_type": MODEL_TYPE
+            }
+            print(f"[{subfolder}] {subject_id}: FC corr = {fc_corr:.4f}")
+
+# Save results
+np.save("D:/op/ANN/stepwise_fc_comparison.npy", all_results)
+print("\n[✓] All processing complete and saved.")
