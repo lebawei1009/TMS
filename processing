@@ -82,5 +82,6 @@ for steps in steps_range:
             print(f"[{subfolder}] {subject_id}: FC corr = {fc_corr:.4f}")
 
 # Save results
-np.save("D:/op/ANN/stepwise_fc_comparison.npy", all_results)
+output_path = f"D:/op/ANN/stepwise_fc_comparison_{MODEL_TYPE}.npy"
+np.save(output_path, all_results)
 print("\n[✓] All processing complete and saved.")
