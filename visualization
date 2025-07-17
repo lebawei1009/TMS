@@ -1,0 +1,54 @@
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+import os
+
+# ---------------------- Load Results ----------------------
+result_path = "D:/op/ANN/stepwise_fc_comparison.npy"
+all_results = np.load(result_path, allow_pickle=True).item()
+
+# ---------------------- FC Correlation vs Steps ----------------------
+avg_corrs = []
+steps_list = sorted(all_results.keys())
+for step in steps_list:
+    corrs = [v["fc_correlation"] for v in all_results[step].values()]
+    avg_corrs.append(np.mean(corrs))
+
+plt.figure(figsize=(8, 5))
+plt.plot(steps_list, avg_corrs, marker='o')
+plt.xlabel("Step Size")
+plt.ylabel("Average FC Correlation")
+plt.title("Average FC Correlation vs Steps")
+plt.grid(True)
+plt.tight_layout()
+plt.savefig("D:/op/ANN/fc_correlation_vs_steps.png")
+plt.show()
+
+# ---------------------- Optional: Per-Subject Loss Curve ----------------------
+# Uncomment this block to visualize losses
+# subject = "sub-NTHC1001_BOLD"
+# plt.figure(figsize=(10, 5))
+# for step in steps_list:
+#     if subject in all_results[step]:
+#         plt.plot(all_results[step][subject]["train_loss"], label=f"step={step}")
+# plt.xlabel("Epoch")
+# plt.ylabel("Train Loss")
+# plt.title(f"Train Loss Curves for {subject} at Different Steps")
+# plt.legend()
+# plt.tight_layout()
+# plt.show()
+
+# ---------------------- Optional: Heatmap of FC Correlations ----------------------
+# Uncomment to visualize subject-wise correlations
+# import pandas as pd
+# fc_corr_matrix = pd.DataFrame({
+#     step: {subj: all_results[step][subj]["fc_correlation"] for subj in all_results[step]}
+#     for step in steps_list
+# }).T
+# plt.figure(figsize=(10, 6))
+# sns.heatmap(fc_corr_matrix, cmap="viridis", annot=True)
+# plt.xlabel("Subject")
+# plt.ylabel("Steps")
+# plt.title("FC Correlation per Subject across Steps")
+# plt.tight_layout()
+# plt.show()
