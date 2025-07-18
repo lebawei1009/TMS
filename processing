@@ -2,9 +2,10 @@ import os
 import numpy as np
 import torch
 from NPI import ANN_RNN, ANN_MLP, ANN_CNN, ANN_VAR, train_NN, model_FC, multi2one
+from Ann_Lstm_Model import ANN_LSTM  # Import custom LSTM model
 
 # ---------------------- Configuration ----------------------
-MODEL_TYPE = 'RNN'  # Options: 'RNN', 'MLP', 'CNN', 'VAR'
+MODEL_TYPE = 'RNN'  # Options: 'RNN', 'MLP', 'CNN', 'VAR', 'LSTM'
 base_root = "D:/op/ANN/TMS_fMRI_2.0.0_AAL424"
 subfolders = ["TMS_fMRI_2.0.0_NTHC", "TMS_fMRI_2.0.0_NTS", "TMS_fMRI_2.0.0_TEHC", "TMS_fMRI_2.0.0_TIS"]
 steps_range = list(range(3, 11))  # steps from 3 to 10
@@ -60,26 +61,38 @@ for steps in steps_range:
                     input_dim=steps * node_num,
                     output_dim=node_num
                 )
+            elif MODEL_TYPE == 'LSTM':
+                model = ANN_LSTM(
+                    input_dim=node_num,
+                    hidden_dim=int(2.5 * node_num),
+                    latent_dim=int(2.5 * node_num),
+                    output_dim=node_num,
+                    data_length=steps
+                )
             else:
                 raise ValueError("Unsupported model type")
 
             # ---------------------- Train + Predict FC ----------------------
             trained_model, train_loss, test_loss = train_NN(model, input_X, target_Y)
-            model_fc = model_FC(trained_model, node_num, steps)
-            true_fc = np.corrcoef(data.T)
+            try:
+                model_fc = model_FC(trained_model, node_num, steps)
+                true_fc = np.corrcoef(data.T)
 
-            # ---------------------- Flatten + Correlation ----------------------
-            mask = ~np.eye(node_num, dtype=bool)
-            fc_corr = np.corrcoef(true_fc[mask], model_fc[mask])[0, 1]
+                # ---------------------- Flatten + Correlation ----------------------
+                mask = ~np.eye(node_num, dtype=bool)
+                fc_corr = np.corrcoef(true_fc[mask], model_fc[mask])[0, 1]
 
-            subject_id = os.path.splitext(file)[0]
-            all_results[steps][subject_id] = {
-                "fc_correlation": fc_corr,
-                "train_loss": train_loss,
-                "test_loss": test_loss,
-                "model_type": MODEL_TYPE
-            }
-            print(f"[{subfolder}] {subject_id}: FC corr = {fc_corr:.4f}")
+                subject_id = os.path.splitext(file)[0]
+                all_results[steps][subject_id] = {
+                    "fc_correlation": fc_corr,
+                    "train_loss": train_loss,
+                    "test_loss": test_loss,
+                    "model_type": MODEL_TYPE
+                }
+                print(f"[{subfolder}] {subject_id}: FC corr = {fc_corr:.4f}")
+            except Exception as e:
+                print(f"[Error in FC computation for {file}] {e}")
+                continue
 
 # Save results
 output_path = f"D:/op/ANN/stepwise_fc_comparison_{MODEL_TYPE}.npy"
