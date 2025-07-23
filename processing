@@ -1,21 +1,20 @@
 import os
 import numpy as np
 import torch
-from NPI import ANN_RNN, ANN_MLP, ANN_CNN, ANN_VAR, train_NN, model_FC, multi2one
-from Ann_Lstm_Model import ANN_LSTM  # Import custom LSTM model
+from NPI import ANN_LSTM, train_NN, model_FC, multi2one
 
 # ---------------------- Configuration ----------------------
-MODEL_TYPE = 'RNN'  # Options: 'RNN', 'MLP', 'CNN', 'VAR', 'LSTM'
+MODEL_TYPE = 'LSTM'
 base_root = "D:/op/ANN/TMS_fMRI_2.0.0_AAL424"
 subfolders = ["TMS_fMRI_2.0.0_NTHC", "TMS_fMRI_2.0.0_NTS", "TMS_fMRI_2.0.0_TEHC", "TMS_fMRI_2.0.0_TIS"]
-steps_range = list(range(3, 11))  # steps from 3 to 10
+steps_range = list(range(2, 11))
 
-all_results = {}
+stepwise_correlation = {}
 
 for steps in steps_range:
-    all_results[steps] = {}
-    print(f"\n>>> Processing steps = {steps}")
+    correlations = []
 
+    print(f"\n>>> Evaluating steps = {steps}")
     for subfolder in subfolders:
         base_path = os.path.join(base_root, subfolder, "resting")
         if not os.path.exists(base_path):
@@ -33,68 +32,38 @@ for steps in steps_range:
             node_num = data.shape[1]
             input_X, target_Y = multi2one(data, steps)
 
-            # ---------------------- Model Init ----------------------
-            if MODEL_TYPE == 'RNN':
-                model = ANN_RNN(
-                    input_dim=node_num,
-                    hidden_dim=int(2.5 * node_num),
-                    latent_dim=int(2.5 * node_num),
-                    output_dim=node_num,
-                    data_length=steps
-                )
-            elif MODEL_TYPE == 'MLP':
-                model = ANN_MLP(
-                    input_dim=steps * node_num,
-                    hidden_dim=2 * node_num,
-                    latent_dim=int(0.8 * node_num),
-                    output_dim=node_num
-                )
-            elif MODEL_TYPE == 'CNN':
-                model = ANN_CNN(
-                    in_channels=node_num,
-                    hidden_channels=node_num,
-                    out_channels=int(0.8 * node_num),
-                    data_length=steps
-                )
-            elif MODEL_TYPE == 'VAR':
-                model = ANN_VAR(
-                    input_dim=steps * node_num,
-                    output_dim=node_num
-                )
-            elif MODEL_TYPE == 'LSTM':
-                model = ANN_LSTM(
-                    input_dim=node_num,
-                    hidden_dim=int(2.5 * node_num),
-                    latent_dim=int(2.5 * node_num),
-                    output_dim=node_num,
-                    data_length=steps
-                )
-            else:
-                raise ValueError("Unsupported model type")
+            # 模型构造
+            model = ANN_LSTM(
+                input_dim=node_num,
+                hidden_dim=int(2.5 * node_num),
+                latent_dim=int(2.5 * node_num),
+                output_dim=node_num,
+                data_length=steps
+            )
 
-            # ---------------------- Train + Predict FC ----------------------
             trained_model, train_loss, test_loss = train_NN(model, input_X, target_Y)
-            try:
-                model_fc = model_FC(trained_model, node_num, steps)
-                true_fc = np.corrcoef(data.T)
+            model_fc = model_FC(trained_model, node_num, steps)
+            true_fc = np.corrcoef(data.T)
 
-                # ---------------------- Flatten + Correlation ----------------------
-                mask = ~np.eye(node_num, dtype=bool)
-                fc_corr = np.corrcoef(true_fc[mask], model_fc[mask])[0, 1]
+            # 计算 FC 相关性
+            mask = ~np.eye(node_num, dtype=bool)
+            fc_corr = np.corrcoef(true_fc[mask], model_fc[mask])[0, 1]
+            correlations.append(fc_corr)
 
-                subject_id = os.path.splitext(file)[0]
-                all_results[steps][subject_id] = {
-                    "fc_correlation": fc_corr,
-                    "train_loss": train_loss,
-                    "test_loss": test_loss,
-                    "model_type": MODEL_TYPE
-                }
-                print(f"[{subfolder}] {subject_id}: FC corr = {fc_corr:.4f}")
-            except Exception as e:
-                print(f"[Error in FC computation for {file}] {e}")
-                continue
+            # 可选：注释掉权重保存
+            # subject_id = os.path.splitext(file)[0]
+            # weight_dir = f"D:/op/ANN/models/{MODEL_TYPE}/step_{steps}"
+            # os.makedirs(weight_dir, exist_ok=True)
+            # torch.save(trained_model.state_dict(), os.path.join(weight_dir, f"{subject_id}.pt"))
 
-# Save results
-output_path = f"D:/op/ANN/stepwise_fc_comparison_{MODEL_TYPE}.npy"
-np.save(output_path, all_results)
-print("\n[✓] All processing complete and saved.")
+    # 汇总每步长的平均相关性
+    if correlations:
+        avg_corr = np.mean(correlations)
+        stepwise_correlation[steps] = avg_corr
+        print(f"[✓] Step {steps}: Avg FC correlation = {avg_corr:.4f}")
+
+# 保存为 npy 文件
+output_path = f"D:/op/ANN/step_vs_corr_{MODEL_TYPE}.npy"
+np.save(output_path, stepwise_correlation)
+print("\n[✓] Saved stepwise FC correlation.")
+
